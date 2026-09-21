@@ -33,3 +33,17 @@ docker compose -f docker-compose.yml -f docker-compose.airflow.yml up airflow-in
 docker compose -f docker-compose.yml -f docker-compose.airflow.yml up -d airflow-webserver airflow-scheduler
 ```
 Airflow UI: http://localhost:8080 (training credentials: admin/admin; change if reused outside the lab).
+
+## Changelog & Progress Tracking
+
+### Phase 0: Prerequisites and Initial Setup
+- **Changes:** Initialized Git repository in the correct project root, created local `.env` file from template, updated local database credentials.
+- **Security:** Verified `.env` is successfully ignored by `.gitignore` to prevent secret leakage.
+
+### Phase 1: Goal 1 - Reproducible Environment
+- **Changes:** Created `.venv`, installed dependencies, and started PostgreSQL via Docker.
+- **External Configuration Explanation:** Configuration is separated from code. Secrets and local credentials are stored securely in `.env` (ignored by Git), while non-sensitive pipeline parameters are stored in `config/settings.yml`. This modularity allows the pipeline to adapt to different runtime contexts (local host vs. Docker container) without modifying the Python source code.
+
+### Phase 1: Goal 1.2 - Reproducible Environment
+- **Changes:** Created `.venv`, installed dependencies, and started PostgreSQL via Docker.
+- **External Configuration Explanation:** Configuration is separated from code. Secrets and local credentials are stored securely in `.env` (ignored by Git), while non-sensitive pipeline parameters are stored in `config/settings.yml`. This modularity allows the pipeline to adapt to different runtime contexts (local host vs. Docker container) without modifying the Python source code.
