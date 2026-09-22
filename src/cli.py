@@ -7,6 +7,15 @@ from src.extract.files import extract_sources
 from src.transform.staging import build_staging
 from src.transform.curated import build_curated
 from src.load.postgres import upsert_curated
+from src.benchmark.runner import run_benchmark  # Corrected function name
+
+def get_latest_run_id():
+    """Helper to find the most recent successful pipeline run."""
+    curated_base = path_for('curated_dir')
+    if not curated_base.exists():
+        return None
+    runs = sorted([d.name.split('=')[1] for d in curated_base.glob('run_id=*') if d.is_dir()])
+    return runs[-1] if runs else None
 
 def main():
     parser = argparse.ArgumentParser(description='DSS150P modular pipeline')
@@ -27,26 +36,28 @@ def main():
         print('Configured source=', SETTINGS['pipeline']['source_dir'])
         return
 
+    if args.command == 'benchmark':
+        # Calls the function defined in your runner.py
+        run_benchmark(args.repeats)
+        return
+
+    # Standard Pipeline Execution
     run_id = new_run_id()
 
     if args.command == 'run-all':
         print(f"Starting pipeline run: {run_id}")
         try:
-            # 1. Extract
             run_raw_path = extract_sources(run_id)
             
-            # 2. Transform (Staging)
             print("Running staging transformations...")
             staging_result = build_staging(Path(run_raw_path), run_id)
             for name, df in staging_result['staging'].items():
                 print(f" -> staged {name}: {len(df)} rows")
                 
-            # 3. Transform (Curated)
             print("Running curated transformations...")
             curated_count, curated_q_count = build_curated(run_id)
             print(f" -> curated sales_order_lines: {curated_count} rows")
             
-            # 4. Load to PostgreSQL
             print("Loading into PostgreSQL...")
             curated_dir = path_for('curated_dir') / f'run_id={run_id}'
             final_df = pd.read_parquet(curated_dir / 'sales_order_lines.parquet')

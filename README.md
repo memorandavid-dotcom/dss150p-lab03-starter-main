@@ -50,3 +50,15 @@ Airflow UI: http://localhost:8080 (training credentials: admin/admin; change if 
 - **Task C (Curated Transformations):** Joined orders with customers and products. Calculated monetary measures (`gross_amount`, `discount_amount`, `net_amount`). Generated a deterministic `record_hash` using MD5 for future rerun-safe loading. Wrote Parquet outputs to `data/curated/`.
 - **Task D (Error Handling & Quarantine):** Wrapped the CLI in a strict `try-except` block for pipeline failures. Enforced data-quality rules (e.g., rejecting invalid quantities, negative prices, and orphaned foreign keys), routing all invalid rows to `data/quarantine/` with a traceable reason.
 - **Execution Strategy:** The pipeline is executed inside a Linux container via `docker compose` to ensure cross-platform reproducibility and deliberately bypass local Windows file-locking and silent Pandas/C-engine memory crashes.
+
+### Phase 3: Goal 3 - Storage Systems and Benchmarking
+- **Task A (Multi-Format Materialization):** Materialized the curated dataset into four representations: CSV, JSON Lines, compressed Parquet (`snappy`), and PostgreSQL.
+- **Task B (Performance Benchmarking):** Measured write time, full read median (5 repetitions), and filtered read median (`status='DELIVERED'`) in compliance with the laboratory specifications.
+- **Benchmark Summary Table:**
+  | Format | Size (Bytes) | Write Time (s) | Full Read Median (s) | Filtered Read Median (s) |
+  | :--- | :--- | :--- | :--- | :--- |
+  | **CSV** | 13,630,073 | 1.9415 | 0.3016 | 0.2810 |
+  | **JSON Lines** | 27,813,442 | 1.1007 | 0.6556 | 1.1403 |
+  | **Parquet** | 3,692,812 | 0.2868 | 0.0726 | 0.1111 |
+  | **PostgreSQL** | Server Table | N/A | 0.5055 | 0.0977 |
+- **Key Findings:** Parquet achieved the highest compression ratio and fastest full-scan performance because of its columnar storage layout. PostgreSQL excelled at filtered retrieval via server-side indexing. CSV and JSON formats incurred higher text-parsing penalties and storage footprints.

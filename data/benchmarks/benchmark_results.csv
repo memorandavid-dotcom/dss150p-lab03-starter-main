@@ -1,0 +1,5 @@
+Format,Size_Bytes,Write_Sec,Full_Read_Sec,Filtered_Read_Sec
+CSV,13630073,1.9415,0.3016,0.281
+JSON Lines,27813442,1.1007,0.6556,1.1403
+Parquet,3692812,0.2868,0.0726,0.1111
+PostgreSQL,Server,N/A,0.5055,0.0977
