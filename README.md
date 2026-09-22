@@ -40,10 +40,13 @@ Airflow UI: http://localhost:8080 (training credentials: admin/admin; change if 
 - **Changes:** Initialized Git repository in the correct project root, created local `.env` file from template, updated local database credentials.
 - **Security:** Verified `.env` is successfully ignored by `.gitignore` to prevent secret leakage.
 
-### Phase 1: Goal 1 - Reproducible Environment
-- **Changes:** Created `.venv`, installed dependencies, and started PostgreSQL via Docker.
-- **External Configuration Explanation:** Configuration is separated from code. Secrets and local credentials are stored securely in `.env` (ignored by Git), while non-sensitive pipeline parameters are stored in `config/settings.yml`. This modularity allows the pipeline to adapt to different runtime contexts (local host vs. Docker container) without modifying the Python source code.
-
 ### Phase 1: Goal 1.2 - Reproducible Environment
 - **Changes:** Created `.venv`, installed dependencies, and started PostgreSQL via Docker.
 - **External Configuration Explanation:** Configuration is separated from code. Secrets and local credentials are stored securely in `.env` (ignored by Git), while non-sensitive pipeline parameters are stored in `config/settings.yml`. This modularity allows the pipeline to adapt to different runtime contexts (local host vs. Docker container) without modifying the Python source code.
+
+### Phase 2: Goal 2 - ETL/ELT Pipeline Development
+- **Task A (Raw Extraction):** Implemented `extract_sources` to copy unmodified source files (`customers.csv`, `orders.csv`, `products.json`) into run-specific snapshots (`data/raw/run_id=...`).
+- **Task B (Staging Transformations):** Cleaned and typed datasets using configurations from `settings.yml`. Deduplicated records keeping the latest `updated_at`, enforced UTC timestamps, normalized strings, and wrote Parquet outputs to `data/staging/`.
+- **Task C (Curated Transformations):** Joined orders with customers and products. Calculated monetary measures (`gross_amount`, `discount_amount`, `net_amount`). Generated a deterministic `record_hash` using MD5 for future rerun-safe loading. Wrote Parquet outputs to `data/curated/`.
+- **Task D (Error Handling & Quarantine):** Wrapped the CLI in a strict `try-except` block for pipeline failures. Enforced data-quality rules (e.g., rejecting invalid quantities, negative prices, and orphaned foreign keys), routing all invalid rows to `data/quarantine/` with a traceable reason.
+- **Execution Strategy:** The pipeline is executed inside a Linux container via `docker compose` to ensure cross-platform reproducibility and deliberately bypass local Windows file-locking and silent Pandas/C-engine memory crashes.

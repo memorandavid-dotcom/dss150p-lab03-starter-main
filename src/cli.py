@@ -4,6 +4,7 @@ from src.config import PROJECT_ROOT, DB, SETTINGS
 from src.common.audit import new_run_id
 from src.extract.files import extract_sources
 from src.transform.staging import build_staging
+from src.transform.curated import build_curated
 
 def main():
     parser = argparse.ArgumentParser(description='DSS150P modular pipeline')
@@ -24,40 +25,33 @@ def main():
         print('Configured source=', SETTINGS['pipeline']['source_dir'])
         return
 
-    # Generate a unique run ID for this execution
     run_id = new_run_id()
-    source_dir = Path(PROJECT_ROOT) / SETTINGS['pipeline']['source_dir']
-    raw_dir = Path(PROJECT_ROOT) / 'data' / 'raw'
-    staging_dir = Path(PROJECT_ROOT) / 'data' / 'staging'
-    quarantine_dir = Path(PROJECT_ROOT) / 'data' / 'quarantine'
 
     if args.command == 'run-all':
         print(f"Starting pipeline run: {run_id}")
-        
         try:
             # 1. Extract
-            run_raw_path = extract_sources(str(source_dir), str(raw_dir), run_id)
+            run_raw_path = extract_sources(run_id)
             
             # 2. Transform (Staging)
             print("Running staging transformations...")
-            staged_dfs, quarantine_df = build_staging(run_raw_path, run_id)
-            
-            # Save Staging to Parquet
-            staging_dir.mkdir(parents=True, exist_ok=True)
-            for name, df in staged_dfs.items():
-                df.to_parquet(staging_dir / f"{name}.parquet", index=False)
-                print(f" -> [Debug] Saved {name}.parquet")
+            staging_result = build_staging(Path(run_raw_path), run_id)
+            for name, df in staging_result['staging'].items():
+                print(f" -> staged {name}: {len(df)} rows")
+            if len(staging_result['quarantine']) > 0:
+                print(f" -> staged quarantine: {len(staging_result['quarantine'])} invalid records.")
                 
-            # Save Quarantine to CSV
-            if not quarantine_df.empty:
-                quarantine_dir.mkdir(parents=True, exist_ok=True)
-                quarantine_df.to_csv(quarantine_dir / f"quarantined_{run_id}.csv", index=False)
-                print(f"Quarantined {len(quarantine_df)} invalid records.")
+            # 3. Transform (Curated)
+            print("Running curated transformations...")
+            curated_count, curated_q_count = build_curated(run_id)
+            print(f" -> curated sales_order_lines: {curated_count} rows")
+            if curated_q_count > 0:
+                print(f" -> curated quarantine (orphans): {curated_q_count} records.")
                 
-            print("Extract and Staging Transform complete.")
+            print("Pipeline extract & transform complete.")
             
         except Exception as e:
-            print(f"\n[PIPELINE FAILURE] A system exception occurred in the '{args.command}' process.")
+            print(f"\n[PIPELINE FAILURE] A system exception occurred.")
             print(f"Error Context: {str(e)}")
             raise
 
