@@ -19,7 +19,7 @@ def _quarantine_row(source_table, business_key, reason, run_id, record):
 def build_curated(run_id: str):
     """
     Joins staging datasets, quarantines orphans, calculates amounts, 
-    and generates a deterministic record_hash.
+    and generates a deterministic record_hash with accurate schema mapping.
     """
     staging_dir = path_for('staging_dir') / f'run_id={run_id}'
     
@@ -29,9 +29,7 @@ def build_curated(run_id: str):
     orders = pd.read_parquet(staging_dir / 'orders.parquet')
 
     # 2. Join and Identify Orphans
-    # Merge orders to customers
     merged = orders.merge(customers, on='customer_id', how='left', indicator='_merge_cust', suffixes=('', '_cust'))
-    # Merge result to products
     merged = merged.merge(products, on='product_id', how='left', indicator='_merge_prod', suffixes=('', '_prod'))
 
     orphan_mask = (merged['_merge_cust'] == 'left_only') | (merged['_merge_prod'] == 'left_only')
@@ -53,7 +51,6 @@ def build_curated(run_id: str):
             {'order_id': row['order_id'], 'customer_id': row['customer_id'], 'product_id': row['product_id']}
         ))
 
-    # Keep only valid joined records
     valid = merged[~orphan_mask].copy()
 
     # 3. Calculate Business Measures
@@ -61,12 +58,24 @@ def build_curated(run_id: str):
     valid['discount_amount'] = valid['gross_amount'] * valid['discount_pct']
     valid['net_amount'] = valid['gross_amount'] - valid['discount_amount']
 
-    # 4. Audit Columns & Deterministic Hash
+    # 4. Map Columns to match PostgreSQL Schema exactly
+    valid = valid.rename(columns={
+        'city': 'customer_city',
+        'tier': 'customer_tier',
+        'name': 'product_name',
+        'category_name': 'category'
+    })
+
+    # Ensure missing target columns are safely handled if missing from source data
+    for col in ['customer_tier', 'brand']:
+        if col not in valid.columns:
+            valid[col] = None
+
+    # 5. Audit Columns & Deterministic Hash
     valid['source_updated_at'] = valid[['updated_at', 'updated_at_cust', 'updated_at_prod']].max(axis=1)
     valid['pipeline_run_id'] = run_id
     valid['processed_at_utc'] = utc_now_iso()
 
-    # Hash the business content (excluding volatile audit timestamps)
     hash_cols = ['order_id', 'customer_id', 'product_id', 'quantity', 'unit_price', 'discount_pct', 'status']
     
     def generate_hash(row):
@@ -75,18 +84,17 @@ def build_curated(run_id: str):
 
     valid['record_hash'] = valid.apply(generate_hash, axis=1)
 
-    # Clean up column names and order
+    # Clean up column names and order to match destination table (email removed)
     final_cols = [
         'order_id', 'customer_id', 'product_id', 'order_timestamp', 'status',
         'quantity', 'unit_price', 'discount_pct', 'gross_amount', 'discount_amount', 'net_amount',
-        'email', 'city', 'category_name', 'category_department',
+        'customer_city', 'customer_tier', 'product_name', 'category', 'brand',
         'source_updated_at', 'pipeline_run_id', 'processed_at_utc', 'record_hash'
     ]
     
-    # Keep only the columns that exist in the final dataframe
     curated_df = valid[[c for c in final_cols if c in valid.columns]]
 
-    # 5. Save Outputs
+    # 6. Save Outputs
     curated_dir = path_for('curated_dir') / f'run_id={run_id}'
     curated_dir.mkdir(parents=True, exist_ok=True)
     curated_df.to_parquet(curated_dir / 'sales_order_lines.parquet', index=False)
