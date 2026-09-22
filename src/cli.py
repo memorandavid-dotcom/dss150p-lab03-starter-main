@@ -1,10 +1,12 @@
 import argparse
+import pandas as pd
 from pathlib import Path
-from src.config import PROJECT_ROOT, DB, SETTINGS
+from src.config import PROJECT_ROOT, DB, SETTINGS, path_for
 from src.common.audit import new_run_id
 from src.extract.files import extract_sources
 from src.transform.staging import build_staging
 from src.transform.curated import build_curated
+from src.load.postgres import upsert_curated
 
 def main():
     parser = argparse.ArgumentParser(description='DSS150P modular pipeline')
@@ -38,17 +40,20 @@ def main():
             staging_result = build_staging(Path(run_raw_path), run_id)
             for name, df in staging_result['staging'].items():
                 print(f" -> staged {name}: {len(df)} rows")
-            if len(staging_result['quarantine']) > 0:
-                print(f" -> staged quarantine: {len(staging_result['quarantine'])} invalid records.")
                 
             # 3. Transform (Curated)
             print("Running curated transformations...")
             curated_count, curated_q_count = build_curated(run_id)
             print(f" -> curated sales_order_lines: {curated_count} rows")
-            if curated_q_count > 0:
-                print(f" -> curated quarantine (orphans): {curated_q_count} records.")
-                
-            print("Pipeline extract & transform complete.")
+            
+            # 4. Load to PostgreSQL
+            print("Loading into PostgreSQL...")
+            curated_dir = path_for('curated_dir') / f'run_id={run_id}'
+            final_df = pd.read_parquet(curated_dir / 'sales_order_lines.parquet')
+            loaded_count = upsert_curated(final_df, run_id)
+            print(f" -> Successfully upserted {loaded_count} records into curated.sales_order_lines")
+            
+            print("Pipeline run complete.")
             
         except Exception as e:
             print(f"\n[PIPELINE FAILURE] A system exception occurred.")
