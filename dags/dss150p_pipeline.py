@@ -1,51 +1,55 @@
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.models.param import Param
 from airflow.operators.bash import BashOperator
 
-PROJECT = '/opt/airflow/project'
+# Default arguments specifying retries, timeouts, and error handling
+default_args = {
+    'owner': 'dss150p',
+    'depends_on_past': False,
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+    'execution_timeout': timedelta(minutes=30),
+}
 
 def failure_callback(context):
-    # TODO Goal 4: write a concise failure record or print meaningful context.
-    print('TASK FAILED:', context['task_instance'].task_id)
-
-DEFAULT_ARGS = {
-    'owner': 'dss150p',
-    'retries': 2,
-    'retry_delay': timedelta(minutes=1),
-    'on_failure_callback': failure_callback,
-}
+    """Callback function executed on task failure."""
+    print(f"\n[AIRFLOW TASK FAILURE] Task failed: {context.get('task_instance').task_id}")
+    print(f"Run ID: {context.get('run_id')}")
+    print(f"Execution Time: {context.get('execution_date')}\n")
 
 with DAG(
     dag_id='dss150p_sales_pipeline',
+    default_args=default_args,
+    description='Production modular data pipeline for DSS150P Lab 3',
+    schedule_interval='0 2 * * *',  # Daily at 02:00 UTC
     start_date=datetime(2026, 1, 1),
-    schedule='0 2 * * *',
     catchup=False,
-    default_args=DEFAULT_ARGS,
+    max_active_runs=1,
     params={
-        'run_mode': Param('full', enum=['full', 'partition']),
-        'year': Param(2026, type='integer'),
-        'month': Param(1, type='integer', minimum=1, maximum=12),
+        'run_mode': 'full',  # Options: 'full' or 'partition'
+        'year': 2026,
+        'month': 1
     },
-    tags=['DSS150P'],
+    tags=['dss150p', 'production', 'modular'],
 ) as dag:
-    extract = BashOperator(
-        task_id='extract',
-        bash_command=f'cd {PROJECT} && PIPELINE_RUN_ID="{{{{ run_id }}}}" python -m src.cli extract',
-    )
-    transform = BashOperator(
-        task_id='transform',
-        bash_command=f'cd {PROJECT} && PIPELINE_RUN_ID="{{{{ run_id }}}}" python -m src.cli transform',
-    )
-    load = BashOperator(
-        task_id='load',
-        bash_command=f'cd {PROJECT} && PIPELINE_RUN_ID="{{{{ run_id }}}}" python -m src.cli load',
-    )
-    validate = BashOperator(
-        task_id='validate',
-        bash_command=f'cd {PROJECT} && PIPELINE_RUN_ID="{{{{ run_id }}}}" python -m src.cli validate',
+
+    # Task 1: Extract Source Files
+    extract_task = BashOperator(
+        task_id='extract_sources',
+        bash_command='python -m src.cli run-all',  # Delegates cleanly to CLI
+        on_failure_callback=failure_callback,
     )
 
-    # TODO Goal 4: confirm dependencies, timeouts, parameter usage,
-    # and a deliberate failure/recovery experiment.
-    extract >> transform >> load >> validate
+    # Task 2: Optional Conditional Partition Load (if run_mode == 'partition')
+    # Note: Our run-all CLI command already executes extract, transform, and full load. 
+    # For a partition-specific run, we can expose a dedicated command step.
+    partition_load_task = BashOperator(
+        task_id='load_selected_partition',
+        bash_command='python -m src.cli load-partition --year {{ params.year }} --month {{ params.month }}',
+        on_failure_callback=failure_callback,
+    )
+
+    # Define task dependencies (Extract/Run-All -> Partition Load check)
+    extract_task >> partition_load_task

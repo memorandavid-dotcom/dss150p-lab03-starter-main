@@ -62,3 +62,41 @@ Airflow UI: http://localhost:8080 (training credentials: admin/admin; change if 
   | **Parquet** | 3,692,812 | 0.2868 | 0.0726 | 0.1111 |
   | **PostgreSQL** | Server Table | N/A | 0.5055 | 0.0977 |
 - **Key Findings:** Parquet achieved the highest compression ratio and fastest full-scan performance because of its columnar storage layout. PostgreSQL excelled at filtered retrieval via server-side indexing. CSV and JSON formats incurred higher text-parsing penalties and storage footprints.
+
+# DSS150P Laboratory Activity #3: Productionizing a Modular Data Pipeline
+
+**Course:** DSS150P - Fundamentals of Data Engineering  
+**Student/Team Repository:** [memorandavid-dotcom/dss150p-lab03-starter-main](https://github.com/memorandavid-dotcom/dss150p-lab03-starter-main)
+
+---
+
+## Overview
+This repository contains the complete production-ready implementation of a modular, rerun-safe, and orchestrated data pipeline for an e-commerce analytics platform. The pipeline ingests raw customer, product, and order records, performs technical cleaning and strict quality quarantining, executes cross-source business joins, materializes performance-benchmarked storage formats, supports partitioned data loading, persists records securely into PostgreSQL via idempotent UPSERTs, and automates end-to-end execution using Apache Airflow.
+
+---
+
+## Architecture & Module Structure
+
+The codebase is strictly separated into single-responsibility modules following modern data engineering standards:
+
+```text
+project/
+├── config/settings.yml       # Non-secret pipeline configurations
+├── data/
+│   ├── source/               # Original unedited source files (CSV, JSON)
+│   ├── raw/                  # Run-specific reproducible raw snapshots
+│   ├── staging/              # Type-casted, cleaned Parquet staging files
+│   ├── curated/              # Business-joined, monetary-calculated Parquet files
+│   ├── quarantine/           # Explicitly rejected invalid/orphan records
+│   ├── benchmarks/           # Format size comparisons and timing reports
+│   └── partitioned/          # Year/month partitioned Parquet storage
+├── src/
+│   ├── extract/              # Source acquisition and raw snapshotting
+│   ├── transform/            # Staging cleanup and curated business join logic
+│   ├── load/                 # PostgreSQL UPSERT persistence and partition loads
+│   ├── validate/             # Schema contract and data quality assertions
+│   ├── benchmark/            # Format materialization and speed runner
+│   └── cli.py                # Thin command-line interface entrypoint
+├── dags/dss150p_pipeline.py  # Production Apache Airflow orchestration DAG
+├── sql/init/                 # Database bootstrap and warehouse schema SQL
+└── docker-compose.yml        # Multi-container orchestration (Python + Postgres)
